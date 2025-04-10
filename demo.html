@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Using MultiSelectAutocomplete</title>
+    <link rel="stylesheet" href="multi-select-autocomplete.css">
+    <style>
+        /* Optional: Add some basic page layout */
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .save-button-container {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        #save-button {
+            padding: 10px 20px;
+            font-size: 1em;
+            color: white;
+            background-color: #28a745;
+            /* Green background */
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        #save-button:hover {
+            background-color: #218838;
+            /* Darker green on hover */
+        }
+
+        /* Make inputs slightly wider for demonstration */
+        #tech-selector,
+        #framework-selector {
+            width: 100%;
+            /* Make input take available width initially */
+            box-sizing: border-box;
+            /* Include padding/border in width */
+        }
+
+        /* Container will control the max-width */
+        .autocomplete-container {
+            max-width: 600px;
+            /* Example max width */
+            margin: 20px auto;
+            /* Center the container */
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Technology Selector</h1>
+
+    <input type="text" id="tech-selector">
+
+    <h1>Framework Selector</h1>
+    <input type="text" id="framework-selector">
+
+
+    <div class="save-button-container">
+        <button id="save-button">Log Selections to Console</button>
+    </div>
+
+    <script src="MultiSelectAutocomplete.js"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- Initialize the first instance ---
+            const techSuggestions = [
+                'Java', 'JavaScript', 'JavaFX', 'Jakarta EE', 'Java Runtime Environment',
+                'Python', 'PyTorch', 'Pygame', 'PHP', 'Perl', 'C++', 'C#', 'CSS',
+                'HTML', 'Haskell', 'HTTP', 'SQL', 'Swift', 'Scala', 'Shell Scripting',
+                'Ruby', 'Rust', 'React', 'Redux', 'Go', 'Groovy', 'Git',
+                'Kotlin', 'Kubernetes', 'Angular', 'Assembly', 'Ada'
+            ];
+
+            const techAutocomplete = new MultiSelectAutocomplete('#tech-selector', {
+                suggestions: techSuggestions,
+                selected: ['JavaScript'], // Pre-select JavaScript
+                placeholder: 'Search or add technologies...',
+                onAdd: (item) => console.log('Tech Added:', item),
+                onRemove: (item) => console.log('Tech Removed:', item),
+                onClearAll: () => console.log('All Tech Cleared')
+            });
+
+            // --- Initialize the second instance ---
+            const frameworkSuggestions = ['React', 'Angular', 'Vue', 'Svelte', 'jQuery', 'Ember', 'Backbone'];
+            const frameworkAutocomplete = new MultiSelectAutocomplete('#framework-selector', {
+                suggestions: frameworkSuggestions,
+                placeholder: 'Select or add frameworks...'
+            });
+
+
+            // --- Example: Getting selected items on button click ---
+            const saveButton = document.getElementById('save-button');
+            if (saveButton) {
+                saveButton.addEventListener('click', () => {
+                    const selectedTech = techAutocomplete.getSelectedItems();
+                    const selectedFrameworks = frameworkAutocomplete.getSelectedItems();
+
+                    console.log('Selected Technologies:', selectedTech);
+                    console.log('Selected Frameworks:', selectedFrameworks);
+                    alert(`Logged selections to console!`);
+                });
+            }
+
+            // --- Example: Using API methods (optional) ---
+            /*
+            setTimeout(() => {
+               console.log('Adding Python programmatically...');
+               techAutocomplete.addItem('Python');
+            }, 3000);
+
+            setTimeout(() => {
+               console.log('Removing Java programmatically (if selected)...');
+               techAutocomplete.removeItem('Java');
+            }, 5000);
+
+            setTimeout(() => {
+               console.log('Destroying framework selector...');
+               frameworkAutocomplete.destroy();
+            }, 7000);
+            */
+        });
+    </script>
+</body>
+
+</html>
