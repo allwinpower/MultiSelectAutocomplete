@@ -204,7 +204,7 @@ class MultiSelectAutocompleteComponent extends HTMLElement {
 
     // Define attributes to observe for changes
     static get observedAttributes() {
-        return ['placeholder', 'max-suggestions', 'suggestions', 'selected'];
+        return ['placeholder', 'max-suggestions', 'suggestions', 'selected', 'tag-server', 'tag-group'];
     }
 
     constructor() {
@@ -218,12 +218,15 @@ class MultiSelectAutocompleteComponent extends HTMLElement {
         this.highlightedIndex = -1;
         this._maxSuggestions = 10;
         this._placeholder = 'Type to search...';
+        this._tagServer = null;
+        this._tagGroup = null;
+        this._initialFetchDone = false; // Flag to prevent multiple initial fetches
 
         // Attach Shadow Root
         this.attachShadow({ mode: 'open' });
         this.shadowRoot.appendChild(template.content.cloneNode(true));
 
-        // Get references to internal elements (querying the shadow root)
+        // Get references to internal elements
         this._wrapperElement = this.shadowRoot.querySelector(`.${MultiSelectAutocompleteComponent.componentStylesClass}`);
         this._inputElement = this.shadowRoot.querySelector(`.${MultiSelectAutocompleteComponent.inputClass}`);
         this._selectedLabelsContainer = this.shadowRoot.querySelector(`.${MultiSelectAutocompleteComponent.labelsClass}`);
@@ -246,28 +249,61 @@ class MultiSelectAutocompleteComponent extends HTMLElement {
         this._addEventListeners();
         this._renderSelectedLabels(); // Render initial selection based on attributes
         this._inputElement.placeholder = this._placeholder;
+
+        // Perform initial fetch if configured and not already done
+        if (!this._initialFetchDone) {
+             this._fetchInitialTags(); // Call the initial fetch
+        }
     }
 
     disconnectedCallback() {
         console.log('[MultiSelectAutocompleteComponent] Disconnected');
         this._removeEventListeners();
-        // Clear references (optional, helps GC potentially)
-        this._wrapperElement = null;
-        this._inputElement = null;
-        // ... etc.
     }
 
     attributeChangedCallback(name, oldValue, newValue) {
-        // console.log(`[MultiSelectAutocompleteComponent] Attribute ${name} changed from ${oldValue} to ${newValue}`);
         if (oldValue !== newValue) {
+            const oldTagServer = this._tagServer;
+            const oldTagGroup = this._tagGroup;
+
             this._updateConfigFromAttributes();
-            // Potentially re-render if 'selected' or 'suggestions' changed
-            if (name === 'selected' || name === 'suggestions') {
-                this._renderSelectedLabels();
-                this._hideSuggestions(); // Hide suggestions as data changed
-            }
-            if (name === 'placeholder') {
+
+            let needsReRender = false;
+            let needsRefetch = false;
+
+            if (name === 'selected') {
+                // Only re-parse 'selected' if it wasn't the source of the change (e.g., from initial fetch)
+                 if (!this._isServerConfigured() || !this._initialFetchDone) {
+                     this._parseSelectedAttribute(newValue);
+                     needsReRender = true;
+                 }
+            } else if (name === 'suggestions') {
+                 this._parseSuggestionsAttribute(newValue);
+                 // Suggestions changing might require filtering again if list is open
+                 if (this._suggestionsListElement.style.display === 'block') {
+                    this._displaySuggestions();
+                 }
+            } else if (name === 'placeholder') {
                 this._inputElement.placeholder = this._placeholder;
+            } else if (name === 'tag-server' || name === 'tag-group') {
+                // If server config changes, trigger a refetch
+                 if (this._tagServer !== oldTagServer || this._tagGroup !== oldTagGroup) {
+                    needsRefetch = true;
+                }
+            }
+
+            if (needsReRender) {
+                this._renderSelectedLabels();
+                // If list is open, refresh it after selection change
+                if (this._suggestionsListElement.style.display === 'block') {
+                   this._displaySuggestions();
+                }
+            }
+
+            if (needsRefetch && this.isConnected) { // Check if connected before fetching
+                console.log('[MultiSelectAutocompleteComponent] Server config changed, re-fetching initial tags.');
+                 this._initialFetchDone = false; // Allow re-fetch
+                 this._fetchInitialTags(); // Refetch if server/group changes
             }
         }
     }
@@ -286,6 +322,8 @@ class MultiSelectAutocompleteComponent extends HTMLElement {
 
     _updateConfigFromAttributes() {
         this._placeholder = this.getAttribute('placeholder') || 'Type to search...';
+        this._tagServer = this.getAttribute('tag-server');
+        this._tagGroup = this.getAttribute('tag-group');
 
         const maxSuggestionsAttr = this.getAttribute('max-suggestions');
         this._maxSuggestions = maxSuggestionsAttr ? parseInt(maxSuggestionsAttr, 10) : 10;
@@ -293,55 +331,67 @@ class MultiSelectAutocompleteComponent extends HTMLElement {
             this._maxSuggestions = 10;
         }
 
-        // Parse JSON attributes safely
+        // Parse JSON attributes safely only if server isn't configured or initial fetch hasn't happened
+        if (!this._isServerConfigured() || !this._initialFetchDone) {
+             if (this.hasAttribute('suggestions')) {
+                 this._parseSuggestionsAttribute(this.getAttribute('suggestions'));
+             }
+        }
+        if (this.hasAttribute('selected')) {
+            this._parseSelectedAttribute(this.getAttribute('selected'));
+        }
+    }
+
+     _parseSuggestionsAttribute(suggestionsAttr) {
         try {
-            const suggestionsAttr = this.getAttribute('suggestions');
             this.allSuggestionsData = suggestionsAttr ? this._processStringArray(JSON.parse(suggestionsAttr)) : [];
         } catch (e) {
             console.error('[MultiSelectAutocompleteComponent] Failed to parse "suggestions" attribute JSON.', e);
             this.allSuggestionsData = [];
         }
+    }
 
-        try {
-            const selectedAttr = this.getAttribute('selected');
-            // Only update selected if attribute exists, otherwise keep current state
+    _parseSelectedAttribute(selectedAttr) {
+         try {
             if (selectedAttr !== null) {
                 this.selectedItems = this._processStringArray(JSON.parse(selectedAttr));
                 this.selectedItemsSet = new Set(this.selectedItems.map(item => item.toLowerCase()));
-                // Re-render might be needed here or handled by attributeChangedCallback
             }
         } catch (e) {
             console.error('[MultiSelectAutocompleteComponent] Failed to parse "selected" attribute JSON.', e);
-            // Don't reset selected items on parse error if already populated
             if (!this.selectedItems) {
                 this.selectedItems = [];
                 this.selectedItemsSet = new Set();
             }
         }
-        // console.log('[MultiSelectAutocompleteComponent] Config Updated:', { placeholder: this._placeholder, max: this._maxSuggestions, suggestions: this.allSuggestionsData.length, selected: this.selectedItems.length });
     }
 
     _processStringArray(arr) {
         if (!Array.isArray(arr)) return [];
-        return [...new Set(arr
-            .filter(s => typeof s === 'string')
-            .map(s => s.trim())
+        const seen = new Set();
+        return arr
+            .map(s => typeof s === 'string' ? s.trim() : '')
             .filter(s => s.length > 0)
-        )];
+            .filter(s => {
+                const lower = s.toLowerCase();
+                if (seen.has(lower)) {
+                    return false;
+                }
+                seen.add(lower);
+                return true;
+            });
     }
-
 
     // --- Event Listener Management ---
 
     _addEventListeners() {
         this._inputElement.addEventListener('input', this.boundHandleInput);
-        this._inputElement.addEventListener('keydown', this.boundHandleKeyDown);
+        this._inputElement.addEventListener('keydown', this.boundHandleKeyDown); // Uses the LATEST _handleKeyDown
         this._inputElement.addEventListener('click', this.boundHandleInputClick);
         this._selectedLabelsContainer.addEventListener('click', this.boundHandleLabelContainerClick);
         this._clearAllButtonElement.addEventListener('click', this.boundHandleClearAllClick);
         this._wrapperElement.addEventListener('click', this.boundHandleContainerClick);
-        // Listen on document to close suggestions when clicking outside
-        document.addEventListener('click', this.boundHandleDocumentClick, true); // Use capture to potentially catch clicks earlier
+        document.addEventListener('click', this.boundHandleDocumentClick, true); // Use capture phase
     }
 
     _removeEventListeners() {
@@ -351,15 +401,77 @@ class MultiSelectAutocompleteComponent extends HTMLElement {
         this._selectedLabelsContainer?.removeEventListener('click', this.boundHandleLabelContainerClick);
         this._clearAllButtonElement?.removeEventListener('click', this.boundHandleClearAllClick);
         this._wrapperElement?.removeEventListener('click', this.boundHandleContainerClick);
-        document.removeEventListener('click', this.boundHandleDocumentClick, true);
+        document.removeEventListener('click', this.boundHandleDocumentClick, true); // Use capture phase
     }
 
-    // --- Event Handlers (Adapted from original class) ---
+    // --- Event Handlers (Updated based on Response #8) ---
 
     _handleInput() {
-        this._displaySuggestions();
+        const value = this._inputElement.value.trim();
+        // Display suggestions only if user is typing something
+        if (value.length > 0) {
+            this.highlightedIndex = -1; // Reset highlight when typing starts
+            this._displaySuggestions();
+        } else {
+            // Hide suggestions if user deletes all text
+            this._hideSuggestions();
+        }
     }
 
+    _handleInputClick(e) {
+        // Only show suggestions on click if there IS text in the input
+        // (mimicking the "only show when typing" behavior)
+        if (this._inputElement.value.trim().length > 0) {
+             this._displaySuggestions();
+        }
+        // If you want click on empty input to show all, uncomment the line below
+        // else { this._displaySuggestions(); }
+        e.stopPropagation();
+    }
+
+    _handleLabelContainerClick(e) {
+        // Handle clicks on remove buttons within labels
+        if (e.target.classList.contains(MultiSelectAutocompleteComponent.removeClass)) {
+            e.stopPropagation(); // Prevent container click focusing input unnecessarily
+            const labelSpan = e.target.closest(`.${MultiSelectAutocompleteComponent.labelClass}`);
+            if (labelSpan && labelSpan.dataset.value) {
+                const removed = this.removeItem(labelSpan.dataset.value); // Doesn't call displaySuggestions
+                if(removed) {
+                    // Manually refresh list after removal via click
+                    this._displaySuggestions();
+                    this._inputElement.focus(); // Keep focus in the component
+                }
+            }
+        }
+        // Handle clicks directly on the container (not on a label/button) to focus input
+        else if (e.target === this._selectedLabelsContainer || e.target === this._wrapperElement) {
+             this._inputElement.focus();
+        }
+    }
+
+    _handleClearAllClick(e) {
+        e.stopPropagation(); // Prevent container click
+        this.clearSelection(); // Calls _displaySuggestions internally now
+        this._inputElement.focus();
+    }
+
+    _handleContainerClick(e) {
+        // If the click is directly on the container background (not input/labels/suggestions), focus the input
+        if (e.target === this._wrapperElement) {
+            this._inputElement.focus();
+        }
+        // Don't propagate further up if click was inside the component unless handled above
+        e.stopPropagation();
+    }
+
+    _handleDocumentClick(e) {
+        // Hide suggestions if the click is outside the component's shadow root AND the host element itself
+        if (!this.shadowRoot.contains(e.target) && !this.contains(e.target)) {
+           this._hideSuggestions();
+        }
+    }
+
+    // --- LATEST UPDATED _handleKeyDown Method (Refactored Visibility Control) ---
     _handleKeyDown(e) {
         const isListVisible = this._suggestionsListElement.style.display === 'block';
         const listItems = isListVisible ? this._suggestionsListElement.querySelectorAll(`.${MultiSelectAutocompleteComponent.suggestionItemClass}`) : [];
@@ -368,106 +480,119 @@ class MultiSelectAutocompleteComponent extends HTMLElement {
 
         switch (e.key) {
             case 'ArrowDown':
-                preventDefault = true;
-                if (!isListVisible && this._inputElement.value.trim().length > 0) {
-                    this._displaySuggestions();
-                } else if (isListVisible && numSuggestions > 0) {
-                    this.highlightedIndex = (this.highlightedIndex + 1) % numSuggestions;
-                    this._updateHighlight();
-                }
-                break;
-            case 'ArrowUp':
-                preventDefault = true;
-                if (isListVisible && numSuggestions > 0) {
-                    this.highlightedIndex = (this.highlightedIndex - 1 + numSuggestions) % numSuggestions;
-                    this._updateHighlight();
-                }
-                break;
-            case ' ': // Spacebar
+                 preventDefault = true;
+                 if (!isListVisible && this._inputElement.value.trim().length > 0) {
+                     // If list not visible but there's text, show it and highlight first
+                     this.highlightedIndex = -1; // Ensure we start from top
+                     this._displaySuggestions(); // Show the list first
+                     // Check if list actually appeared and has items before highlighting
+                     const newItems = this._suggestionsListElement.querySelectorAll(`.${MultiSelectAutocompleteComponent.suggestionItemClass}`);
+                     if (newItems.length > 0) {
+                        this.highlightedIndex = 0;
+                        this._updateHighlight();
+                     }
+                 } else if (isListVisible && numSuggestions > 0) {
+                     // List is visible, move highlight down
+                     this.highlightedIndex = (this.highlightedIndex + 1) % numSuggestions;
+                     this._updateHighlight();
+                 }
+                 break;
+             case 'ArrowUp':
+                 preventDefault = true;
+                 if (isListVisible && numSuggestions > 0) {
+                     this.highlightedIndex = (this.highlightedIndex - 1 + numSuggestions) % numSuggestions;
+                     this._updateHighlight();
+                 }
+                 break;
+
+            case ' ': // Spacebar (Keep list open)
                 if (isListVisible && this.highlightedIndex > -1 && numSuggestions > 0) {
                     preventDefault = true;
                     const highlightedLi = listItems[this.highlightedIndex];
                     if (highlightedLi) {
                         const valueToAdd = highlightedLi.dataset.addNewValue || highlightedLi.textContent;
-                        if (valueToAdd) this.addItem(valueToAdd);
+                        if (valueToAdd) {
+                             const added = this.addItem(valueToAdd); // Doesn't call display itself
+                             if (added) {
+                                 this._inputElement.value = ''; // Clear input
+                                 this.highlightedIndex = -1; // Reset highlight after selection
+                                 // *** Manually refresh list content; it will show remaining items ***
+                                 this._displaySuggestions();
+                             }
+                             this._inputElement.focus();
+                        }
                     }
+                } else {
+                    preventDefault = false; // Allow space typing
                 }
                 break;
-            case 'Enter':
+
+            case 'Enter': // Enter (Select and close list)
                 preventDefault = true;
                 let valueToAddEnter = null;
                 if (isListVisible && this.highlightedIndex > -1 && listItems[this.highlightedIndex]) {
+                    // If item highlighted, take it
                     const highlightedLi = listItems[this.highlightedIndex];
                     valueToAddEnter = highlightedLi.dataset.addNewValue || highlightedLi.textContent;
                 } else {
+                    // If no highlight, try adding typed text if valid
                     const rawInputValue = this._inputElement.value.trim();
-                    if (rawInputValue.length > 0) valueToAddEnter = rawInputValue;
+                    if (rawInputValue.length > 0) {
+                         const isExactMatchSuggestion = this.allSuggestionsData.some(s => s.toLowerCase() === rawInputValue.toLowerCase());
+                         const isAlreadySelected = this.selectedItemsSet.has(rawInputValue.toLowerCase());
+                         if (!isExactMatchSuggestion && !isAlreadySelected) {
+                             valueToAddEnter = rawInputValue; // Allow adding typed text
+                         }
+                    }
                 }
-                if (valueToAddEnter) this.addItem(valueToAddEnter);
+
+                if (valueToAddEnter) {
+                    this.addItem(valueToAddEnter); // Doesn't call display itself
+                }
                 this._inputElement.value = '';
+                // *** Explicitly hide list on Enter ***
                 this._hideSuggestions();
                 break;
+
             case 'Escape':
                 if (isListVisible) {
                     preventDefault = true;
-                    this._hideSuggestions();
+                    this._hideSuggestions(); // Escape closes the list
                 }
                 break;
-            default:
-                if (isListVisible) {
-                    this.highlightedIndex = -1;
-                    this._updateHighlight(false);
+
+            case 'Backspace':
+                if (this._inputElement.value === '' && this.selectedItems.length > 0) {
+                    // Remove last item if input is empty
+                    preventDefault = true;
+                    const lastItem = this.selectedItems[this.selectedItems.length - 1];
+                    const removed = this.removeItem(lastItem); // Doesn't call display itself
+                    if (removed) {
+                         // *** Manually refresh list content after removal ***
+                         this._displaySuggestions(); // Show remaining items
+                    }
+                } else {
+                    // If typing backspace, let the 'input' event handle hiding/showing suggestions
+                    this.highlightedIndex = -1; // Reset highlight
+                     if(isListVisible) this._updateHighlight(false); // Update ARIA if list was visible
                 }
                 break;
-        }
-        if (preventDefault) e.preventDefault();
-    }
 
-    _handleInputClick(e) {
-        e.stopPropagation();
-        if (this._inputElement.value.trim().length > 0 && this._suggestionsListElement.style.display === 'none') {
-            this._displaySuggestions();
+            default: // Other typing characters
+                 this.highlightedIndex = -1; // Reset highlight
+                 if(isListVisible) this._updateHighlight(false); // Update ARIA if list was visible
+                // Let 'input' event handle showing suggestions based on new value
+                break;
         }
-    }
 
-    _handleLabelContainerClick(e) {
-        if (e.target.classList.contains(MultiSelectAutocompleteComponent.removeClass)) {
-            e.stopPropagation();
-            const labelElement = e.target.closest('.' + MultiSelectAutocompleteComponent.labelClass);
-            const itemToRemove = labelElement?.dataset.value;
-            if (itemToRemove) {
-                this.removeItem(itemToRemove);
-                this._inputElement.focus();
-            }
+        if (preventDefault) {
+            e.preventDefault();
         }
     }
+    // --- END LATEST UPDATED _handleKeyDown Method ---
 
-    _handleClearAllClick(e) {
-        e.stopPropagation();
-        this.clearSelection();
-        this._inputElement.focus();
-    }
 
-    _handleContainerClick(e) {
-        const target = e.target;
-        // Focus input only if clicking non-interactive background
-        if ((target === this._wrapperElement || target === this._selectedLabelsContainer) &&
-            !target.closest('.' + MultiSelectAutocompleteComponent.removeClass) &&
-            target !== this._clearAllButtonElement &&
-            target !== this._inputElement &&
-            !target.closest('.' + MultiSelectAutocompleteComponent.suggestionItemClass)) {
-            this._inputElement.focus();
-        }
-    }
-
-    _handleDocumentClick(e) {
-        // Check if the click is outside the component host element
-        if (!this.contains(e.target)) {
-            this._hideSuggestions();
-        }
-    }
-
-    // --- Core Logic Methods (Adapted) ---
+    // --- Core Logic Methods ---
 
     _renderSelectedLabels() {
         const fragment = document.createDocumentFragment();
@@ -476,7 +601,7 @@ class MultiSelectAutocompleteComponent extends HTMLElement {
             labelSpan.className = MultiSelectAutocompleteComponent.labelClass;
             labelSpan.textContent = item;
             labelSpan.dataset.value = item;
-            labelSpan.setAttribute('part', 'selected-label'); // Expose part for styling
+            labelSpan.setAttribute('part', 'selected-label');
 
             const removeBtn = document.createElement('span');
             removeBtn.className = MultiSelectAutocompleteComponent.removeClass;
@@ -484,7 +609,7 @@ class MultiSelectAutocompleteComponent extends HTMLElement {
             removeBtn.title = `Remove ${item}`;
             removeBtn.setAttribute('role', 'button');
             removeBtn.setAttribute('aria-label', `Remove ${item}`);
-            removeBtn.setAttribute('part', 'remove-button'); // Expose part
+            removeBtn.setAttribute('part', 'remove-button');
             removeBtn.tabIndex = -1;
 
             labelSpan.appendChild(removeBtn);
@@ -496,33 +621,41 @@ class MultiSelectAutocompleteComponent extends HTMLElement {
         this._clearAllButtonElement.style.display = this.selectedItems.length > 0 ? 'inline-block' : 'none';
     }
 
+    // --- Method responsible for RENDERING suggestions based on current input (Updated based on Response #8) ---
     _displaySuggestions() {
         const rawInputValue = this._inputElement.value.trim();
         const lowerInputValue = rawInputValue.toLowerCase();
 
-        this._suggestionsListElement.innerHTML = '';
-        this.currentFilteredSuggestions = [];
+        this._suggestionsListElement.innerHTML = ''; // Clear previous suggestions
+        this.currentFilteredSuggestions = []; // Reset filtered list
 
-        if (lowerInputValue.length === 0) {
-            this._hideSuggestions();
-            return;
+        // --- Filter Logic ---
+        if (lowerInputValue.length > 0) {
+            // Input has text: Filter suggestions based on input
+            this.currentFilteredSuggestions = this.allSuggestionsData.filter(suggestion =>
+                !this.selectedItemsSet.has(suggestion.toLowerCase()) &&
+                suggestion.toLowerCase().includes(lowerInputValue)
+            );
+        } else {
+            // Input is empty: Show all available (non-selected) suggestions
+            this.currentFilteredSuggestions = this.allSuggestionsData.filter(
+                suggestion => !this.selectedItemsSet.has(suggestion.toLowerCase())
+            );
         }
+        // --- End Filter Logic ---
 
-        this.currentFilteredSuggestions = this.allSuggestionsData.filter(suggestion =>
-            !this.selectedItemsSet.has(suggestion.toLowerCase()) &&
-            suggestion.toLowerCase().includes(lowerInputValue)
-        );
+        const fragment = document.createDocumentFragment();
 
+        // Determine if the exact input can be added (only possible if input is not empty)
         let canAddNew = false;
-        if (rawInputValue.length > 0) {
+        if (rawInputValue.length > 0) { // Only check if input has text
             const isExactMatchSuggestion = this.allSuggestionsData.some(s => s.toLowerCase() === lowerInputValue);
             const isAlreadySelected = this.selectedItemsSet.has(lowerInputValue);
             canAddNew = !isExactMatchSuggestion && !isAlreadySelected;
         }
 
-        const fragment = document.createDocumentFragment();
-
-        if (canAddNew) {
+        // Option to add the current input value if it's new
+        if (canAddNew) { // This condition implies rawInputValue.length > 0
             const addNewLi = this._createSuggestionLi(
                 `Add "${rawInputValue}"`,
                 `${MultiSelectAutocompleteComponent.suggestionItemClass} ${MultiSelectAutocompleteComponent.addNewItemClass}`,
@@ -530,12 +663,18 @@ class MultiSelectAutocompleteComponent extends HTMLElement {
             );
             addNewLi.dataset.addNewValue = rawInputValue;
             addNewLi.setAttribute('part', 'suggestion-item add-new-item');
-            addNewLi.addEventListener('click', (e) => { e.stopPropagation(); this.addItem(rawInputValue); });
+            addNewLi.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.addItem(rawInputValue); // Doesn't call display itself
+                this._inputElement.value = '';
+                this._hideSuggestions(); // Click action always closes list
+            });
             fragment.appendChild(addNewLi);
         }
 
+        // Add filtered suggestions
         this.currentFilteredSuggestions
-            .slice(0, this._maxSuggestions)
+            .slice(0, this._maxSuggestions) // Apply max suggestions limit
             .forEach((suggestion, index) => {
                 const listItem = this._createSuggestionLi(
                     suggestion,
@@ -543,20 +682,36 @@ class MultiSelectAutocompleteComponent extends HTMLElement {
                     `${this._suggestionsListElement.id}-item-${index}`
                 );
                 listItem.setAttribute('part', 'suggestion-item');
-                listItem.addEventListener('click', (e) => { e.stopPropagation(); this.addItem(suggestion); });
+                listItem.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.addItem(suggestion); // Doesn't call display itself
+                    this._inputElement.value = '';
+                    this._hideSuggestions(); // Click action always closes list
+                });
                 fragment.appendChild(listItem);
             });
 
+        // Show or hide the list based on whether there are any suggestions to display
         if (fragment.hasChildNodes()) {
             this._suggestionsListElement.appendChild(fragment);
-            this.highlightedIndex = -1;
-            this._updateHighlight(false);
+             // Reset or maintain highlight
+             if(this.highlightedIndex < 0) {
+                this._updateHighlight(false);
+             } else {
+                 const currentListItems = this._suggestionsListElement.querySelectorAll(`.${MultiSelectAutocompleteComponent.suggestionItemClass}`);
+                 this.highlightedIndex = Math.min(this.highlightedIndex, currentListItems.length - 1); // Clamp index
+                 if (this.highlightedIndex < 0) this.highlightedIndex = -1; // Ensure it's not negative if list empty after filter
+                 this._updateHighlight(false); // Update highlight visuals and ARIA
+             }
+            // *** SHOW the list ***
             this._suggestionsListElement.style.display = 'block';
             this._inputElement.setAttribute('aria-expanded', 'true');
         } else {
+            // *** No suggestions matching criteria, HIDE the list ***
             this._hideSuggestions();
         }
     }
+
 
     _createSuggestionLi(textContent, className, id) {
         const listItem = document.createElement('li');
@@ -572,7 +727,7 @@ class MultiSelectAutocompleteComponent extends HTMLElement {
             this._suggestionsListElement.style.display = 'none';
             this._inputElement.setAttribute('aria-expanded', 'false');
             this._inputElement.removeAttribute('aria-activedescendant');
-            this.highlightedIndex = -1;
+            this.highlightedIndex = -1; // Reset index when hiding
         }
     }
 
@@ -583,12 +738,17 @@ class MultiSelectAutocompleteComponent extends HTMLElement {
         listItems.forEach((item, index) => {
             const shouldHighlight = index === this.highlightedIndex;
             item.classList.toggle(MultiSelectAutocompleteComponent.highlightClass, shouldHighlight);
+            item.setAttribute('aria-selected', shouldHighlight ? 'true' : 'false');
+
             if (shouldHighlight) {
-                item.setAttribute('aria-selected', 'true');
                 activeDescendantId = item.id;
-                if (shouldScroll) item.scrollIntoView({ block: 'nearest' });
-            } else {
-                item.removeAttribute('aria-selected');
+                if (shouldScroll) {
+                     requestAnimationFrame(() => { // Use rAF for smoother scroll
+                        if(item.offsetParent !== null) {
+                            item.scrollIntoView({ block: 'nearest' });
+                        }
+                     });
+                }
             }
         });
 
@@ -599,13 +759,82 @@ class MultiSelectAutocompleteComponent extends HTMLElement {
         }
     }
 
-    // --- Public API Methods ---
+    // --- Server Interaction Methods ---
 
-    /**
-     * Adds an item to the selection.
-     * @param {string} itemText - The text of the item to add.
-     * @returns {boolean} - True if the item was added, false otherwise.
-     */
+    _isServerConfigured() {
+        return !!(this._tagServer && this._tagGroup);
+    }
+
+    async _fetchInitialTags() {
+        if (!this._isServerConfigured()) {
+            console.log('[MultiSelectAutocompleteComponent] Server not configured, skipping initial fetch.');
+            this._initialFetchDone = true;
+            return;
+        }
+
+        const url = `${this._tagServer}/${this._tagGroup}`;
+        console.log(`[MultiSelectAutocompleteComponent] Fetching tag choices from: ${url}`);
+
+        try {
+            const response = await fetch(url, {
+                 method: 'GET',
+                 headers: { 'Accept': 'application/json, text/plain' }
+             });
+
+            if (!response.ok) throw new Error(`HTTP error! Status: ${response.status} ${response.statusText}`);
+
+            const contentType = response.headers.get('content-type');
+            let fetchedTags = [];
+
+            if (contentType && contentType.includes('application/json')) {
+                 const data = await response.json();
+                 fetchedTags = Array.isArray(data) ? this._processStringArray(data) : [];
+                 if (!Array.isArray(data)) console.warn('[MultiSelectAutocompleteComponent] Received JSON is not an array.');
+            } else {
+                 const text = await response.text();
+                 fetchedTags = this._processStringArray(text.split('\n'));
+            }
+
+            console.log(`[MultiSelectAutocompleteComponent] Fetched ${fetchedTags.length} tag choices.`);
+            this.allSuggestionsData = [...fetchedTags];
+            this._initialFetchDone = true;
+
+        } catch (error) {
+            console.error('[MultiSelectAutocompleteComponent] Failed to fetch tag choices:', error);
+            this._initialFetchDone = true; // Mark done even on error
+        } finally {
+             this._hideSuggestions(); // Ensure hidden after fetch attempt
+        }
+    }
+
+    async _syncAllTagsToServer() {
+        if (!this._isServerConfigured()) {
+            console.warn("[MultiSelectAutocompleteComponent] Attempted to sync tags, but server is not configured.");
+            return;
+        }
+        const url = `${this._tagServer}/${this._tagGroup}`;
+        const tagsToSync = [...this.selectedItems];
+        console.log(`[MultiSelectAutocompleteComponent] Syncing ${tagsToSync.length} tags to ${url}...`);
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(tagsToSync),
+            });
+            if (response.ok) {
+                console.log(`[MultiSelectAutocompleteComponent] Successfully synced tags for group '${this._tagGroup}'.`);
+            } else {
+                let errorText = response.statusText;
+                try { errorText += ` - ${await response.text()}`; } catch (_) { /* Ignore */ }
+                 console.error(`[MultiSelectAutocompleteComponent] Error syncing tags for group '${this._tagGroup}'. Status: ${response.status}. ${errorText}`);
+            }
+        } catch (error) {
+            console.error(`[MultiSelectAutocompleteComponent] Network error syncing tags for group '${this._tagGroup}':`, error);
+        }
+    }
+
+    // --- Public API Methods (Updated based on Response #8) ---
+
     addItem(itemText) {
         const trimmedItemText = itemText?.trim();
         if (!trimmedItemText) return false;
@@ -614,96 +843,83 @@ class MultiSelectAutocompleteComponent extends HTMLElement {
         if (!this.selectedItemsSet.has(lowerTrimmedItemText)) {
             this.selectedItems.push(trimmedItemText);
             this.selectedItemsSet.add(lowerTrimmedItemText);
+
+            const lowerAllSuggestions = new Set(this.allSuggestionsData.map(s => s.toLowerCase()));
+            if (!lowerAllSuggestions.has(lowerTrimmedItemText)) {
+                 this.allSuggestionsData.push(trimmedItemText);
+            }
+
             this._renderSelectedLabels();
-            this._displaySuggestions(); // Refresh suggestions
+            // *** REMOVED: this._displaySuggestions(); *** Calling context handles refresh
 
-            // Dispatch custom event
             this.dispatchEvent(new CustomEvent('add', {
-                bubbles: true, // Allow event to bubble up
-                composed: true, // Allow event to cross Shadow DOM boundary
-                detail: { item: trimmedItemText }
+                bubbles: true, composed: true, detail: { item: trimmedItemText }
             }));
-
-            this._inputElement.focus(); // Keep focus
-            return true;
+            return true; // Indicate item was added
         }
-        this._inputElement.focus();
-        return false;
+        return false; // Indicate item was *not* added
     }
 
-    /**
-     * Removes an item from the selection.
-     * @param {string} itemText - The text of the item to remove.
-     * @returns {boolean} - True if the item was removed, false otherwise.
-     */
     removeItem(itemText) {
-        if (!itemText) return false;
+         if (!itemText) return false;
         const lowerItemText = itemText.toLowerCase();
 
         if (this.selectedItemsSet.has(lowerItemText)) {
+            const originalItem = this.selectedItems.find(item => item.toLowerCase() === lowerItemText);
             this.selectedItems = this.selectedItems.filter(item => item.toLowerCase() !== lowerItemText);
             this.selectedItemsSet.delete(lowerItemText);
             this._renderSelectedLabels();
-            this._displaySuggestions(); // Refresh suggestions
+             // *** REMOVED: this._displaySuggestions(); *** Calling context handles refresh
 
-            // Dispatch custom event
             this.dispatchEvent(new CustomEvent('remove', {
-                bubbles: true,
-                composed: true,
-                detail: { item: itemText }
+                bubbles: true, composed: true, detail: { item: originalItem || itemText }
             }));
-
             return true;
         }
         return false;
     }
 
-    /**
-     * Clears all selected items.
-     */
     clearSelection() {
         if (this.selectedItems.length === 0) return;
-        const removedItems = [...this.selectedItems]; // Copy for event detail
+        const removedItems = [...this.selectedItems];
 
         this.selectedItems = [];
         this.selectedItemsSet.clear();
         this._renderSelectedLabels();
-        this._displaySuggestions(); // Refresh suggestions
+        // *** Manually refresh/hide list after clearing ***
+        this._displaySuggestions(); // Will likely hide as input is probably empty
 
-        // Dispatch custom event
         this.dispatchEvent(new CustomEvent('clearall', {
-            bubbles: true,
-            composed: true,
-            detail: { removedItems: removedItems }
+            bubbles: true, composed: true, detail: { removedItems: removedItems }
         }));
     }
 
-    /**
-     * Gets the currently selected items.
-     * @returns {string[]} A copy of the selected items array.
-     */
+
     getSelectedItems() {
-        return [...this.selectedItems]; // Return a defensive copy
+        if (this._isServerConfigured()) {
+            this._syncAllTagsToServer(); // Fire and forget sync
+        } else {
+             console.log("[MultiSelectAutocompleteComponent] getSelectedItems: server not configured. Skipping sync.");
+        }
+        return [...this.selectedItems]; // Return current local state
     }
 
-    /**
-     * Sets the available suggestions.
-     * @param {string[]} suggestionsArray - An array of suggestion strings.
-     */
     setSuggestions(suggestionsArray) {
         this.allSuggestionsData = this._processStringArray(suggestionsArray);
-        this._displaySuggestions(); // Update display if needed
+        // Refresh list only if it's currently relevant (visible or input focused)
+        if (this._suggestionsListElement.style.display === 'block' || this.shadowRoot.activeElement === this._inputElement) {
+             this._displaySuggestions();
+        }
     }
 
-    /**
-     * Sets the selected items.
-     * @param {string[]} selectedArray - An array of items to select.
-     */
     setSelected(selectedArray) {
         this.selectedItems = this._processStringArray(selectedArray);
         this.selectedItemsSet = new Set(this.selectedItems.map(item => item.toLowerCase()));
         this._renderSelectedLabels();
-        this._displaySuggestions(); // Update display if needed
+        // Refresh list only if it's currently relevant
+        if (this._suggestionsListElement.style.display === 'block' || this.shadowRoot.activeElement === this._inputElement) {
+             this._displaySuggestions();
+        }
     }
 }
 

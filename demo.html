@@ -20,8 +20,10 @@
         }
 
         .component-wrapper {
-             max-width: 600px; /* Example max width */
-             margin: 20px auto; /* Center the container */
+            max-width: 600px;
+            /* Example max width */
+            margin: 20px auto;
+            /* Center the container */
         }
 
         .save-button-container {
@@ -33,7 +35,8 @@
             padding: 10px 20px;
             font-size: 1em;
             color: white;
-            background-color: #28a745; /* Green background */
+            background-color: #28a745;
+            /* Green background */
             border: none;
             border-radius: 5px;
             cursor: pointer;
@@ -41,7 +44,8 @@
         }
 
         #save-button:hover {
-            background-color: #218838; /* Darker green on hover */
+            background-color: #218838;
+            /* Darker green on hover */
         }
 
         /* Example of styling the component from outside using CSS variables (if defined inside) */
@@ -52,7 +56,7 @@
         }
         */
 
-         /* Example of styling using ::part */
+        /* Example of styling using ::part */
         /*
          multi-select-autocomplete::part(selected-label) {
              background-color: purple;
@@ -62,7 +66,6 @@
              background-color: lightyellow;
          }
         */
-
     </style>
     <script src="multi-select-autocomplete-component.min.js" defer></script>
 </head>
@@ -72,23 +75,18 @@
     <h1>Technology Selector</h1>
 
     <div class="component-wrapper">
-        <multi-select-autocomplete
-            id="tech-selector-component"
-            placeholder="Search or add technologies..."
+        <multi-select-autocomplete id="tech-selector-component" placeholder="Search or add technologies..."
             suggestions='["Java", "JavaScript", "JavaFX", "Jakarta EE", "Java Runtime Environment", "Python", "PyTorch", "Pygame", "PHP", "Perl", "C++", "C#", "CSS", "HTML", "Haskell", "HTTP", "SQL", "Swift", "Scala", "Shell Scripting", "Ruby", "Rust", "React", "Redux", "Go", "Groovy", "Git", "Kotlin", "Kubernetes", "Angular", "Assembly", "Ada"]'
-            selected='["JavaScript"]'>
+            selected='["JavaScript"]' tag-server="/tags" tag-group="technologies">
         </multi-select-autocomplete>
     </div>
 
 
     <h1>Framework Selector</h1>
     <div class="component-wrapper">
-         <multi-select-autocomplete
-            id="framework-selector-component"
-            placeholder="Select or add frameworks..."
-            suggestions='["React", "Angular", "Vue", "Svelte", "jQuery", "Ember", "Backbone"]'
-            max-suggestions="5">
-         </multi-select-autocomplete>
+        <multi-select-autocomplete id="framework-selector-component" placeholder="Select or add frameworks..."
+            suggestions='["React", "Angular", "Vue", "Svelte", "jQuery", "Ember", "Backbone"]' max-suggestions="5">
+        </multi-select-autocomplete>
     </div>
 
 
@@ -96,6 +94,12 @@
         <button id="save-button">Log Selections to Console</button>
     </div>
 
+    <multi-select-autocomplete suggestions='["Apple", "Banana", "Blueberry", "Orange", "Grape"]'
+        placeholder="Select or add fruits..." tag-server="/tags" tag-group="fruitTags"
+        selected='[]'></multi-select-autocomplete>
+
+    <multi-select-autocomplete placeholder="Select or add tools..." tag-server="/tags"
+        tag-group="toolTags"></multi-select-autocomplete>
 
     <script>
         // Wait for the custom elements to be defined and the DOM ready
@@ -128,7 +132,7 @@
                     // Use the component's public method
                     const selectedTech = techComponent.getSelectedItems();
                     const selectedFrameworks = frameworkComponent.getSelectedItems();
-
+                    const selectedTools = 
                     console.log('Selected Technologies:', selectedTech);
                     console.log('Selected Frameworks:', selectedFrameworks);
                     alert(`Logged selections to console!`);
@@ -138,13 +142,13 @@
             // --- Example: Using API methods (optional) ---
 
             setTimeout(() => {
-               console.log('Adding Python programmatically via component method...');
-               techComponent.addItem('Python'); // Call method directly on the element
+                console.log('Adding Python programmatically via component method...');
+                techComponent.addItem('Python'); // Call method directly on the element
             }, 3000);
 
             setTimeout(() => {
-               console.log('Removing Java programmatically (if selected) via component method...');
-               techComponent.removeItem('Java');
+                console.log('Removing Java programmatically (if selected) via component method...');
+                techComponent.removeItem('Java');
             }, 5000);
 
             // Example of setting data programmatically (better for large datasets than attributes)

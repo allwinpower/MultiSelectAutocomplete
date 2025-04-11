@@ -7,7 +7,7 @@ import * as terser from 'terser'; // Use * as terser for named export 'minify'
 
 // --- Configuration ---
 const INPUT_JS_FILE = 'multi-select-autocomplete-component.js'; // Your component file
-const OUTPUT_JS_FILE = 'multi-select-autocomplete-component.min.js'; // Output minified file
+const OUTPUT_JS_FILE = 'dist/multi-select-autocomplete-component.min.js'; // Output minified file
 // Optional: Define browser targets for Lightning CSS (uses browserslist syntax)
 // See https://github.com/browserslist/browserslist
 const BROWSER_TARGETS = '>= 0.5% and last 2 versions and not dead';
