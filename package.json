@@ -1,0 +1,25 @@
+{
+  "name": "multiselectautocomplete",
+  "version": "1.0.0",
+  "description": "A flexible component for selecting multiple items with autocomplete suggestions and tagging capabilities.",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "build": "node build.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/allwinpower/MultiSelectAutocomplete.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/allwinpower/MultiSelectAutocomplete/issues"
+  },
+  "homepage": "https://github.com/allwinpower/MultiSelectAutocomplete#readme",
+  "devDependencies": {
+    "browserslist": "^4.24.4",
+    "lightningcss": "^1.29.3",
+    "terser": "^5.39.0"
+  }
+}

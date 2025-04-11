@@ -4,8 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Using MultiSelectAutocomplete</title>
-    <link rel="stylesheet" href="multi-select-autocomplete.css">
+    <title>Using MultiSelectAutocomplete Component</title>
     <style>
         /* Optional: Add some basic page layout */
         body {
@@ -20,6 +19,11 @@
             margin-bottom: 30px;
         }
 
+        .component-wrapper {
+             max-width: 600px; /* Example max width */
+             margin: 20px auto; /* Center the container */
+        }
+
         .save-button-container {
             text-align: center;
             margin-top: 20px;
@@ -29,8 +33,7 @@
             padding: 10px 20px;
             font-size: 1em;
             color: white;
-            background-color: #28a745;
-            /* Green background */
+            background-color: #28a745; /* Green background */
             border: none;
             border-radius: 5px;
             cursor: pointer;
@@ -38,79 +41,93 @@
         }
 
         #save-button:hover {
-            background-color: #218838;
-            /* Darker green on hover */
+            background-color: #218838; /* Darker green on hover */
         }
 
-        /* Make inputs slightly wider for demonstration */
-        #tech-selector,
-        #framework-selector {
-            width: 100%;
-            /* Make input take available width initially */
-            box-sizing: border-box;
-            /* Include padding/border in width */
+        /* Example of styling the component from outside using CSS variables (if defined inside) */
+        /*
+        multi-select-autocomplete {
+           --label-background-color: #dc3545;
+           margin-bottom: 25px;
         }
+        */
 
-        /* Container will control the max-width */
-        .autocomplete-container {
-            max-width: 600px;
-            /* Example max width */
-            margin: 20px auto;
-            /* Center the container */
-        }
+         /* Example of styling using ::part */
+        /*
+         multi-select-autocomplete::part(selected-label) {
+             background-color: purple;
+             border: 1px dotted yellow;
+         }
+         multi-select-autocomplete::part(input) {
+             background-color: lightyellow;
+         }
+        */
+
     </style>
+    <script src="multi-select-autocomplete-component.min.js" defer></script>
 </head>
 
 <body>
 
     <h1>Technology Selector</h1>
 
-    <input type="text" id="tech-selector">
+    <div class="component-wrapper">
+        <multi-select-autocomplete
+            id="tech-selector-component"
+            placeholder="Search or add technologies..."
+            suggestions='["Java", "JavaScript", "JavaFX", "Jakarta EE", "Java Runtime Environment", "Python", "PyTorch", "Pygame", "PHP", "Perl", "C++", "C#", "CSS", "HTML", "Haskell", "HTTP", "SQL", "Swift", "Scala", "Shell Scripting", "Ruby", "Rust", "React", "Redux", "Go", "Groovy", "Git", "Kotlin", "Kubernetes", "Angular", "Assembly", "Ada"]'
+            selected='["JavaScript"]'>
+        </multi-select-autocomplete>
+    </div>
+
 
     <h1>Framework Selector</h1>
-    <input type="text" id="framework-selector">
+    <div class="component-wrapper">
+         <multi-select-autocomplete
+            id="framework-selector-component"
+            placeholder="Select or add frameworks..."
+            suggestions='["React", "Angular", "Vue", "Svelte", "jQuery", "Ember", "Backbone"]'
+            max-suggestions="5">
+         </multi-select-autocomplete>
+    </div>
 
 
     <div class="save-button-container">
         <button id="save-button">Log Selections to Console</button>
     </div>
 
-    <script src="MultiSelectAutocomplete.js"></script>
 
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            // --- Initialize the first instance ---
-            const techSuggestions = [
-                'Java', 'JavaScript', 'JavaFX', 'Jakarta EE', 'Java Runtime Environment',
-                'Python', 'PyTorch', 'Pygame', 'PHP', 'Perl', 'C++', 'C#', 'CSS',
-                'HTML', 'Haskell', 'HTTP', 'SQL', 'Swift', 'Scala', 'Shell Scripting',
-                'Ruby', 'Rust', 'React', 'Redux', 'Go', 'Groovy', 'Git',
-                'Kotlin', 'Kubernetes', 'Angular', 'Assembly', 'Ada'
-            ];
+        // Wait for the custom elements to be defined and the DOM ready
+        // Using defer on the component script helps, but DOMContentLoaded is safest
+        window.addEventListener('DOMContentLoaded', () => {
 
-            const techAutocomplete = new MultiSelectAutocomplete('#tech-selector', {
-                suggestions: techSuggestions,
-                selected: ['JavaScript'], // Pre-select JavaScript
-                placeholder: 'Search or add technologies...',
-                onAdd: (item) => console.log('Tech Added:', item),
-                onRemove: (item) => console.log('Tech Removed:', item),
-                onClearAll: () => console.log('All Tech Cleared')
+            // Get references to the component elements
+            const techComponent = document.getElementById('tech-selector-component');
+            const frameworkComponent = document.getElementById('framework-selector-component');
+
+            // --- Listen to custom events from the component ---
+            techComponent.addEventListener('add', (event) => {
+                console.log('Tech Added (Event):', event.detail.item);
+            });
+            techComponent.addEventListener('remove', (event) => {
+                console.log('Tech Removed (Event):', event.detail.item);
+            });
+            techComponent.addEventListener('clearall', (event) => {
+                console.log('All Tech Cleared (Event). Removed:', event.detail.removedItems);
             });
 
-            // --- Initialize the second instance ---
-            const frameworkSuggestions = ['React', 'Angular', 'Vue', 'Svelte', 'jQuery', 'Ember', 'Backbone'];
-            const frameworkAutocomplete = new MultiSelectAutocomplete('#framework-selector', {
-                suggestions: frameworkSuggestions,
-                placeholder: 'Select or add frameworks...'
+            frameworkComponent.addEventListener('add', (event) => {
+                console.log('Framework Added (Event):', event.detail.item);
             });
-
 
             // --- Example: Getting selected items on button click ---
             const saveButton = document.getElementById('save-button');
             if (saveButton) {
                 saveButton.addEventListener('click', () => {
-                    const selectedTech = techAutocomplete.getSelectedItems();
-                    const selectedFrameworks = frameworkAutocomplete.getSelectedItems();
+                    // Use the component's public method
+                    const selectedTech = techComponent.getSelectedItems();
+                    const selectedFrameworks = frameworkComponent.getSelectedItems();
 
                     console.log('Selected Technologies:', selectedTech);
                     console.log('Selected Frameworks:', selectedFrameworks);
@@ -119,21 +136,24 @@
             }
 
             // --- Example: Using API methods (optional) ---
-            /*
+
             setTimeout(() => {
-               console.log('Adding Python programmatically...');
-               techAutocomplete.addItem('Python');
+               console.log('Adding Python programmatically via component method...');
+               techComponent.addItem('Python'); // Call method directly on the element
             }, 3000);
 
             setTimeout(() => {
-               console.log('Removing Java programmatically (if selected)...');
-               techAutocomplete.removeItem('Java');
+               console.log('Removing Java programmatically (if selected) via component method...');
+               techComponent.removeItem('Java');
             }, 5000);
 
+            // Example of setting data programmatically (better for large datasets than attributes)
+            /*
             setTimeout(() => {
-               console.log('Destroying framework selector...');
-               frameworkAutocomplete.destroy();
-            }, 7000);
+                console.log('Setting new suggestions for frameworks...');
+                frameworkComponent.setSuggestions(['SolidJS', 'Alpine.js', 'Lit', 'Stencil']);
+                frameworkComponent.setSelected(['Lit']);
+            }, 4000);
             */
         });
     </script>
