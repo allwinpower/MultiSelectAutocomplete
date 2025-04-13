@@ -190,10 +190,16 @@ async function createTagRouter(options = {}) {
     // POST /:groupId (relative path)
     router.post('/:groupId', async (req, res) => {
         const { groupId } = req.params;
+        console.log('groupId:', groupId);
         if (!GROUP_ID_REGEX.test(groupId)) {
             return res.status(400).json({ error: 'Invalid group ID format.' });
         }
+        if (req.body === undefined) {
+            console.warn(`[TagManager WARN - POST /${groupId}] 'req.body' is undefined. This likely means the express.json() middleware was not used or applied correctly *before* this route in the main Express application setup. Ensure 'app.use(express.json());' is called.`);
+            return res.status(400).json({ error: 'Missing or malformed request body. Expected JSON array.' });
+        }
         if (!Array.isArray(req.body)) {
+            console.log('req.body:', req.body);
             return res.status(400).json({ error: 'Request body must be an array of tags.' });
         }
 

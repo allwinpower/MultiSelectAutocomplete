@@ -3,28 +3,42 @@
   "version": "1.0.0",
   "description": "A flexible component for selecting multiple items with autocomplete suggestions and tagging capabilities.",
   "main": "index.js",
+  "browser": "./dist/multi-select-autocomplete-component.min.js",
   "type": "module",
   "scripts": {
-    "build": "node build.js"
+    "build": "node build.js",
+    "prepublishOnly": "npm run build"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/allwinpower/MultiSelectAutocomplete.git"
   },
-  "author": "",
-  "license": "ISC",
+  "author": "Allwin Ketnawang",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/allwinpower/MultiSelectAutocomplete/issues"
   },
   "homepage": "https://github.com/allwinpower/MultiSelectAutocomplete#readme",
   "devDependencies": {
+    "express": "^5.1.0",
     "browserslist": "^4.24.4",
     "lightningcss": "^1.29.3",
     "terser": "^5.39.0"
   },
   "dependencies": {
     "chokidar": "^4.0.3",
-    "express": "^5.1.0",
     "proper-lockfile": "^4.1.2"
-  }
+  },
+  "peerDependencies": {
+    "express": "^4.17.0 || ^5.0.0"
+  },
+  "files": [
+    "dist",
+    "index.js",
+    "create-router.js",
+    "LICENSE",
+    "README.md"
+  ],
+  "unpkg": "./dist/multi-select-autocomplete-component.min.js",
+  "jsdelivr": "./dist/multi-select-autocomplete-component.min.js"
 }
